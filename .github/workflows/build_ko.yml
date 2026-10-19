@@ -27,16 +27,14 @@ jobs:
 
       - name: Extract kernel source
         run: |
-          # Step 1 - unzip the outer zip
           unzip kernel_src.zip -d kernel_raw
           echo "=== Outer zip contents ==="
           ls kernel_raw/
 
-          # Step 2 - find kernel.tar.gz specifically
-          KERNEL_TAR=$(find kernel_raw -name "kernel.tar.gz" | head -1)
-          echo "kernel.tar.gz at: $KERNEL_TAR"
+          # Case-insensitive find for Kernel.tar.gz
+          KERNEL_TAR=$(find kernel_raw -iname "kernel.tar.gz" | head -1)
+          echo "Kernel tar at: $KERNEL_TAR"
 
-          # Step 3 - extract kernel tar into kernel_src/
           mkdir -p kernel_src
           tar -xzf "$KERNEL_TAR" -C kernel_src
           echo "=== kernel_src contents ==="
