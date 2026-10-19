@@ -25,55 +25,47 @@ jobs:
             "https://github.com/pixelontopp/DFRoot/releases/download/%23idk/SM-A037F_13_Opensource.zip"
           ls -lh kernel_src.zip
 
-      - name: Extract and inspect
+      - name: Extract kernel source
         run: |
+          # Step 1 - unzip the outer zip
           unzip kernel_src.zip -d kernel_raw
-          echo "=== TOP LEVEL CONTENTS ==="
-          ls -la kernel_raw/
-          echo "=== SECOND LEVEL ==="
-          ls -la kernel_raw/*/ 2>/dev/null || true
-          echo "=== LOOKING FOR KERNEL DIR ==="
-          find kernel_raw -maxdepth 3 -type d | sort
-          echo "=== LOOKING FOR TAR FILES ==="
-          find kernel_raw -name "*.tar*" -o -name "*.gz" | head -20
-          echo "=== LOOKING FOR arch DIRECTORY ==="
-          find kernel_raw -type d -name "arch" | head -5
-          echo "=== LOOKING FOR Kconfig ==="
-          find kernel_raw -name "Kconfig" -maxdepth 5 | head -5
+          echo "=== Outer zip contents ==="
+          ls kernel_raw/
+
+          # Step 2 - find kernel.tar.gz specifically
+          KERNEL_TAR=$(find kernel_raw -name "kernel.tar.gz" | head -1)
+          echo "kernel.tar.gz at: $KERNEL_TAR"
+
+          # Step 3 - extract kernel tar into kernel_src/
+          mkdir -p kernel_src
+          tar -xzf "$KERNEL_TAR" -C kernel_src
+          echo "=== kernel_src contents ==="
+          ls kernel_src/
+          echo "=== arch location ==="
+          find kernel_src -type d -name "arch" | head -3
 
       - name: Prepare kernel headers
         run: |
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
 
-          # Find the real kernel root
-          KERNEL_ROOT=$(find kernel_raw -type d -name "arch" \
-            | head -1 | xargs dirname)
+          ARCH_DIR=$(find kernel_src -type d -name "arch" | head -1)
+          echo "arch at: $ARCH_DIR"
+          KERNEL_ROOT=$(dirname "$ARCH_DIR")
+          echo "Kernel root: $KERNEL_ROOT"
 
-          if [ -z "$KERNEL_ROOT" ]; then
-            # Maybe it's inside a tar
-            INNER_TAR=$(find kernel_raw -name "*.tar*" | head -1)
-            if [ -n "$INNER_TAR" ]; then
-              mkdir real_kernel
-              tar -xf "$INNER_TAR" -C real_kernel --strip-components=1
-              KERNEL_ROOT=$(find real_kernel -type d -name "arch" \
-                | head -1 | xargs dirname)
-            fi
-          fi
+          ls "$KERNEL_ROOT/arch/arm64/configs/"
 
-          echo "KERNEL ROOT: $KERNEL_ROOT"
-          ls $KERNEL_ROOT/arch/arm64/configs/
-
-          DEFCONFIG=$(ls $KERNEL_ROOT/arch/arm64/configs/ \
+          DEFCONFIG=$(ls "$KERNEL_ROOT/arch/arm64/configs/" \
             | grep -i "defconfig" | head -1)
-          echo "Using: $DEFCONFIG"
+          echo "Using defconfig: $DEFCONFIG"
 
-          cd $KERNEL_ROOT
+          cd "$KERNEL_ROOT"
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- $DEFCONFIG
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
                modules_prepare -j$(nproc)
 
-          echo $KERNEL_ROOT > /tmp/kernel_root.txt
+          echo "$KERNEL_ROOT" > /tmp/kernel_root.txt
 
       - name: Build dfroot.ko
         run: |
@@ -81,7 +73,7 @@ jobs:
           export CROSS_COMPILE=aarch64-linux-gnu-
           KERNEL_ROOT=$(cat /tmp/kernel_root.txt)
           echo "Building against: $KERNEL_ROOT"
-          make -C $KERNEL_ROOT \
+          make -C "$KERNEL_ROOT" \
                M=$(pwd)/lkm \
                ARCH=arm64 \
                CROSS_COMPILE=aarch64-linux-gnu- \
