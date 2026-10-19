@@ -16,8 +16,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             gcc-aarch64-linux-gnu \
+            clang lld llvm \
             make bc libssl-dev \
-            unzip python3 dos2unix
+            unzip python3 dos2unix \
+            libelf-dev
 
       - name: Download kernel source
         run: |
@@ -32,16 +34,26 @@ jobs:
           echo "Kernel tar at: $KERNEL_TAR"
           mkdir -p kernel_src
           tar -xzf "$KERNEL_TAR" -C kernel_src
-          echo "=== kernel_src contents ==="
           ls kernel_src/
 
-      - name: Fix Kconfig encoding
+      - name: Fix toolchain and encoding
         run: |
-          echo "Fixing CRLF in all Kconfig files..."
-          find kernel_src -name "Kconfig" -exec dos2unix {} \; 2>/dev/null || true
-          find kernel_src -name "Kconfig" \
-            -exec sed -i 's/\r//' {} \; 2>/dev/null || true
-          echo "Done"
+          cd kernel_src
+
+          # Create fake clang path Samsung's Makefile expects
+          mkdir -p toolchain/clang/host/linux-x86/clang-r383902/bin
+          ln -sf $(which clang) \
+            toolchain/clang/host/linux-x86/clang-r383902/bin/clang
+          ln -sf $(which clang++) \
+            toolchain/clang/host/linux-x86/clang-r383902/bin/clang++
+
+          echo "Clang symlink:"
+          ls -la toolchain/clang/host/linux-x86/clang-r383902/bin/
+
+          # Fix CRLF in all Kconfig files
+          find . -name "Kconfig" -exec dos2unix {} \; 2>/dev/null || true
+
+          cd ..
 
       - name: Prepare kernel headers
         run: |
@@ -54,10 +66,16 @@ jobs:
 
           cd "$KERNEL_ROOT"
 
-          # Defconfig confirmed: a03s_00_defconfig
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+          make ARCH=arm64 \
+               CROSS_COMPILE=aarch64-linux-gnu- \
+               CC=clang \
+               CLANG_TRIPLE=aarch64-linux-gnu- \
                a03s_00_defconfig
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+
+          make ARCH=arm64 \
+               CROSS_COMPILE=aarch64-linux-gnu- \
+               CC=clang \
+               CLANG_TRIPLE=aarch64-linux-gnu- \
                modules_prepare -j$(nproc)
 
           echo "$KERNEL_ROOT" > /tmp/kernel_root.txt
@@ -68,10 +86,13 @@ jobs:
           export CROSS_COMPILE=aarch64-linux-gnu-
           KERNEL_ROOT=$(cat /tmp/kernel_root.txt)
           echo "Building against: $KERNEL_ROOT"
+
           make -C "$KERNEL_ROOT" \
                M=$(pwd)/lkm \
                ARCH=arm64 \
                CROSS_COMPILE=aarch64-linux-gnu- \
+               CC=clang \
+               CLANG_TRIPLE=aarch64-linux-gnu- \
                modules -j$(nproc)
 
       - name: Upload artifact
