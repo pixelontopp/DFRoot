@@ -17,7 +17,7 @@ jobs:
           sudo apt-get install -y \
             gcc-aarch64-linux-gnu \
             make bc libssl-dev \
-            unzip python3
+            unzip python3 dos2unix
 
       - name: Download kernel source
         run: |
@@ -28,19 +28,20 @@ jobs:
       - name: Extract kernel source
         run: |
           unzip kernel_src.zip -d kernel_raw
-          echo "=== Outer zip contents ==="
-          ls kernel_raw/
-
-          # Case-insensitive find for Kernel.tar.gz
           KERNEL_TAR=$(find kernel_raw -iname "kernel.tar.gz" | head -1)
           echo "Kernel tar at: $KERNEL_TAR"
-
           mkdir -p kernel_src
           tar -xzf "$KERNEL_TAR" -C kernel_src
           echo "=== kernel_src contents ==="
           ls kernel_src/
-          echo "=== arch location ==="
-          find kernel_src -type d -name "arch" | head -3
+
+      - name: Fix Kconfig encoding
+        run: |
+          echo "Fixing CRLF in all Kconfig files..."
+          find kernel_src -name "Kconfig" -exec dos2unix {} \; 2>/dev/null || true
+          find kernel_src -name "Kconfig" \
+            -exec sed -i 's/\r//' {} \; 2>/dev/null || true
+          echo "Done"
 
       - name: Prepare kernel headers
         run: |
@@ -48,18 +49,14 @@ jobs:
           export CROSS_COMPILE=aarch64-linux-gnu-
 
           ARCH_DIR=$(find kernel_src -type d -name "arch" | head -1)
-          echo "arch at: $ARCH_DIR"
           KERNEL_ROOT=$(dirname "$ARCH_DIR")
           echo "Kernel root: $KERNEL_ROOT"
 
-          ls "$KERNEL_ROOT/arch/arm64/configs/"
-
-          DEFCONFIG=$(ls "$KERNEL_ROOT/arch/arm64/configs/" \
-            | grep -i "defconfig" | head -1)
-          echo "Using defconfig: $DEFCONFIG"
-
           cd "$KERNEL_ROOT"
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- $DEFCONFIG
+
+          # Defconfig confirmed: a03s_00_defconfig
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+               a03s_00_defconfig
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
                modules_prepare -j$(nproc)
 
