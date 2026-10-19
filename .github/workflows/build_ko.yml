@@ -36,44 +36,55 @@ jobs:
           else
             mv kernel_raw kernel_src
           fi
-          echo "=== Root contents ==="
+          echo "=== Top level ==="
           ls kernel_src/
+          echo "=== Second level ==="
+          ls kernel_src/*/ 2>/dev/null | head -40
 
       - name: Find defconfig
         run: |
-          echo "=== arch/arm64/configs ==="
-          ls kernel_src/arch/arm64/configs/ || echo "DIR NOT FOUND"
-          echo "=== All defconfigs in tree ==="
-          find kernel_src -name "*defconfig*" | head -40
-          echo "=== Kernel source root ==="
-          ls kernel_src/
+          echo "=== Locating arch/arm64 ==="
+          find . -type d -name "arm64" | head -10
+          echo "=== Locating Makefile ==="
+          find . -name "Makefile" -maxdepth 4 | head -10
+          echo "=== All defconfigs ==="
+          find . -name "*defconfig*" | head -30
 
       - name: Prepare kernel headers
         run: |
-          cd kernel_src
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
 
-          DEFCONFIG=$(find arch/arm64/configs/ -name "*defconfig" \
-            | head -1 | xargs basename)
-          echo "Auto-picked defconfig: $DEFCONFIG"
+          # Find actual kernel root (where Makefile + arch both exist)
+          KERNEL_ROOT=$(find . -name "Makefile" -maxdepth 4 \
+            | xargs -I{} dirname {} \
+            | while read d; do
+                [ -d "$d/arch" ] && echo "$d" && break
+              done)
 
-          if [ -z "$DEFCONFIG" ]; then
-            echo "ERROR: No defconfig found. Full tree:"
-            find . -name "*defconfig*"
-            exit 1
-          fi
+          echo "Kernel root: $KERNEL_ROOT"
+          cd $KERNEL_ROOT
+
+          # Find defconfig
+          DEFCONFIG=$(find arch/arm64/configs/ \
+            -name "*defconfig" | head -1 | xargs basename)
+          echo "Using defconfig: $DEFCONFIG"
 
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
                $DEFCONFIG
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
                modules_prepare -j$(nproc)
 
+          # Save kernel root path for next step
+          echo $KERNEL_ROOT > /tmp/kernel_root.txt
+
       - name: Build dfroot.ko
         run: |
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
-          make -C $(pwd)/kernel_src \
+          KERNEL_ROOT=$(cat /tmp/kernel_root.txt)
+          echo "Building against: $KERNEL_ROOT"
+          make -C $KERNEL_ROOT \
                M=$(pwd)/lkm \
                ARCH=arm64 \
                CROSS_COMPILE=aarch64-linux-gnu- \
