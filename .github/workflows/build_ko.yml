@@ -30,22 +30,35 @@ jobs:
           unzip kernel_src.zip -d kernel_raw
           INNER=$(find kernel_raw -name "*.tar.gz" | head -1)
           if [ -n "$INNER" ]; then
+            echo "Found inner archive: $INNER"
             mkdir kernel_src
             tar -xzf "$INNER" -C kernel_src --strip-components=1
           else
             mv kernel_raw kernel_src
           fi
+          echo "=== Root contents ==="
+          ls kernel_src/
+
+      - name: Find defconfig
+        run: |
+          echo "=== arch/arm64/configs ==="
+          ls kernel_src/arch/arm64/configs/ || echo "not found"
+          echo "=== All defconfigs ==="
+          find kernel_src -name "*defconfig*" | head -30
 
       - name: Prepare kernel headers
         run: |
           cd kernel_src
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
-          DEFCONFIG=$(find . -name "*a03*defconfig" \
-            -o -name "*A037*defconfig" 2>/dev/null | head -1)
-          echo "Using defconfig: $DEFCONFIG"
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
-               $(basename $DEFCONFIG)
+               a03s_eur_opendefconfig 2>/dev/null || \
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+               a03s_defconfig 2>/dev/null || \
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+               vendor/a03s_eur_opendefconfig 2>/dev/null || \
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+               msm8953_defconfig
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
                modules_prepare -j$(nproc)
 
